@@ -1,5 +1,5 @@
 const { isJwtCircuitPayload } = require("../services/jwtCircuitService");
-const { logBasic } = require("../config/logger");
+const { logBasic, logVerbose } = require("../config/logger");
 
 const STABLE_ID_REGEX = /^[a-f0-9]{64}$/i;
 
@@ -47,8 +47,15 @@ function validateProofPayload(req, res, next) {
     hasPublicOutputs: !!body?.publicOutputs,
     publicOutputsKeys: body?.publicOutputs ? Object.keys(body.publicOutputs) : []
   });
+  logVerbose("validateProof.body_shape", {
+    proofPiA: body?.proof?.pi_a != null,
+    proofPiB: body?.proof?.pi_b != null,
+    proofPiC: body?.proof?.pi_c != null,
+    nullifierLen: body?.publicOutputs?.nullifier != null ? String(body.publicOutputs.nullifier).length : 0
+  });
   if (isJwtCircuitPayload(body)) {
     logBasic("validateProof.isJwtCircuitPayload", { result: true });
+    logVerbose("validateProof.jwt_circuit_check.entry");
     const jwtValid = validateJwtCircuitPayload(body);
     logBasic("validateProof.validateJwtCircuitPayload", {
       result: jwtValid,
@@ -64,10 +71,12 @@ function validateProofPayload(req, res, next) {
     }
     req.jwtCircuit = true;
     logBasic("validateProof.pass", { type: "jwtCircuit" });
+    logVerbose("validateProof.jwt_circuit_check.pass", { next: "verifyJwtCircuitProof" });
     return next();
   }
   if (validateSemaphorePayload(body)) {
     logBasic("validateProof.pass", { type: "semaphore" });
+    logVerbose("validateProof.semaphore.pass");
     return next();
   }
   logBasic("validateProof.reject", { reason: "INVALID_PROOF_PAYLOAD", step: "no matching payload" });

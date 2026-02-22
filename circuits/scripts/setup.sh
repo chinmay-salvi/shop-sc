@@ -21,11 +21,15 @@ if [ ! -f "$SNARKJS" ]; then
   npm install
 fi
 
-# Powers of tau (small for dev; use larger for production)
-PTAU="$BUILD_DIR/pot12_final.ptau"
+# Circuit has ~537k constraints (RSA); need 2^20 ptau. Download from zkevm (large file, may take a few minutes).
+PTAU="$BUILD_DIR/pot20_final.ptau"
 if [ ! -f "$PTAU" ] || [ ! -s "$PTAU" ]; then
-  echo "Downloading powers of tau (ptau)..."
-  curl -L -o "$PTAU" "https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_12.ptau"
+  echo "Downloading powers of tau 2^20 (ptau)..."
+  curl -L -o "$PTAU" "https://storage.googleapis.com/zkevm/ptau/powersOfTau28_hez_final_20.ptau"
+fi
+if [ ! -s "$PTAU" ]; then
+  echo "Error: ptau download failed or file empty. Check network and retry."
+  exit 1
 fi
 
 echo "Phase 2: circuit-specific setup..."

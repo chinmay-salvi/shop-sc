@@ -40,15 +40,23 @@ cp build/verification_key.json ../backend/src/config/jwt_circuit_vkey.json
 | Public in | currentTime | Client Unix timestamp. |
 | Public in | expectedAudHash | Hash of expected `aud` (Google Client ID). |
 | Public in | googleKeyHash | Hash of Google RS256 public key. |
+| Public in | modulus[32] | RSA modulus (2048-bit as 32×64-bit limbs), from JWKS. |
+| Public in | expRsa[32] | RSA exponent (65537 as 32 limbs), from JWKS. |
 | Private in | sub | Google user ID (field element). |
 | Private in | exp | JWT `exp` claim. |
 | Private in | audHash | Hash of `aud` claim. |
-| Private in | emailSuffixValid | 1 if email ends with @usc.edu. |
-| Private in | signatureValid | 1 if JWT signature valid (placeholder; production = RSA-in-circuit). |
+| Private in | emailSuffix[8] | Last 8 bytes of email — **in-circuit** constrained to equal `@usc.edu` (ASCII). |
+| Private in | sign[32] | JWT signature (2048-bit as 32×64-bit limbs). |
+| Private in | hashed[4] | SHA-256 of JWT message (header.payload) as 4×64-bit limbs. |
 | Public out | nullifier | Poseidon(sub, pepper) — stable pseudonymous id. |
 
-## Production
+## In-circuit @usc.edu
 
-- **RSA-in-circuit**: Replace the `signatureValid` placeholder with real RSA-2048 verification. See **[docs/rsa-in-circuit-plan.md](../docs/rsa-in-circuit-plan.md)** for a step-by-step plan and links to [circom-rsa-verify](https://github.com/zkp-application/circom-rsa-verify) and [zk-jwt](https://github.com/zkemail/zk-jwt). Then re-run trusted setup and export a new verification key.
-- Use a proper powers-of-tau ceremony for production (larger ptau, multi-party contribution).
-- Copy `build/verification_key.json` to `backend/src/config/jwt_circuit_vkey.json` for the backend verifier.
+The circuit **proves** that the email ends with `@usc.edu`: private input `emailSuffix[8]` is constrained to equal the ASCII bytes `64, 117, 115, 99, 46, 101, 100, 117`. No trusted boolean.
+
+## Production / RSA-in-circuit
+
+- **RSA-2048** is integrated: the circuit uses [circom-rsa-verify](https://github.com/zkp-application/circom-rsa-verify) (vendored under `vendor/circom-rsa-verify`) to verify the JWT signature in-circuit. Public signals: pepper, currentTime, expectedAudHash, googleKeyHash, modulus[32], expRsa[32], nullifier (**69** total). Frontend builds message hash (SHA-256 of `header.payload`), signature/modulus/exp as 64-bit limbs; backend `buildPublicSignals` builds the 69-element array when the vkey has `nPublic >= 69`.
+- **Setup** uses a **2^20** powers-of-tau file (circuit has ~537k constraints). `scripts/setup.sh` downloads `powersOfTau28_hez_final_20.ptau` from zkevm (~1.2GB); the first run may take several minutes for download and phase-2 setup.
+- Use a proper powers-of-tau ceremony for production (multi-party contribution).
+- After setup, copy `build/verification_key.json` to `backend/src/config/jwt_circuit_vkey.json` and run `npm run copy-to-frontend`.

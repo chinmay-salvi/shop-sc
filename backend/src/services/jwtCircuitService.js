@@ -1,6 +1,7 @@
 /**
  * Verification for JWT @usc.edu ZK circuit (Groth16).
  * Payload: proof + public inputs/outputs; nullifier is the stable pseudonymous user id.
+ * Server enforces Google key + audience via JWKS hashes before accepting proof.
  * See docs/zk-auth-architecture.md and circuits/README.md.
  */
 const path = require("path");
@@ -10,6 +11,7 @@ const {
   markJwtProofUsed,
   isNullifierRevoked
 } = require("../models/nullifier");
+const { validateServerSideHashes } = require("./jwksService");
 const { logBasic, logVerbose } = require("../config/logger");
 
 const TIME_SKEW_SECONDS = parseInt(process.env.ZKP_TIME_SKEW_SECONDS || "120", 10);
@@ -18,24 +20,50 @@ const VKEY_PATH = process.env.JWT_CIRCUIT_VKEY_PATH || path.join(__dirname, "../
 let cachedVkey = null;
 
 function loadVerificationKey() {
-  if (cachedVkey) return cachedVkey;
+  logVerbose("jwtCircuit.loadVerificationKey.entry", { path: VKEY_PATH });
+  if (cachedVkey) {
+    logVerbose("jwtCircuit.loadVerificationKey.cache_hit");
+    return cachedVkey;
+  }
   if (!fs.existsSync(VKEY_PATH)) {
+    logBasic("jwtCircuit.loadVerificationKey.missing", { path: VKEY_PATH });
     throw new Error("JWT_CIRCUIT_VKEY_NOT_CONFIGURED: Copy circuits/build/verification_key.json to backend/src/config/jwt_circuit_vkey.json");
   }
   cachedVkey = JSON.parse(fs.readFileSync(VKEY_PATH, "utf8"));
+  logVerbose("jwtCircuit.loadVerificationKey.loaded", { nPublic: cachedVkey.nPublic, icLen: cachedVkey.IC?.length });
   return cachedVkey;
 }
 
 /**
- * Circuit has nPublic=1 (only the nullifier is a public signal). Verification expects [nullifier].
+ * Build public signals for Groth16.verify.
+ * RSA circuit (nPublic=69): [pepper, currentTime, expectedAudHash, googleKeyHash, modulus[0..31], expRsa[0..31], nullifier].
+ * Legacy (nPublic=1): [nullifier].
  */
-function buildPublicSignals(_publicInputs, publicOutputs) {
+function buildPublicSignals(publicInputs, publicOutputs, vkey) {
   const { nullifier } = publicOutputs;
-  return [String(nullifier)];
+  const nPublic = vkey && typeof vkey.nPublic === "number" ? vkey.nPublic : 1;
+  if (nPublic >= 69 && Array.isArray(publicInputs.modulus) && publicInputs.modulus.length === 32 && Array.isArray(publicInputs.expRsa) && publicInputs.expRsa.length === 32) {
+    const modulus = publicInputs.modulus.map((x) => String(x));
+    const expRsa = publicInputs.expRsa.map((x) => String(x));
+    const signals = [
+      String(publicInputs.pepper),
+      String(publicInputs.currentTime),
+      String(publicInputs.expectedAudHash),
+      String(publicInputs.googleKeyHash),
+      ...modulus,
+      ...expRsa,
+      String(nullifier)
+    ];
+    logVerbose("jwtCircuit.buildPublicSignals", { length: signals.length, mode: "rsa69", nullifierPrefix: String(nullifier).slice(0, 12) + "…" });
+    return signals;
+  }
+  const signals = [String(nullifier)];
+  logVerbose("jwtCircuit.buildPublicSignals", { length: signals.length, mode: "legacy", nullifierPrefix: signals[0]?.slice(0, 12) + "…" });
+  return signals;
 }
 
 /**
- * Verify JWT-circuit proof, time window, and replay/revocation; mark nullifier used.
+ * Verify JWT-circuit proof, time window, server-side key/aud binding, replay/revocation; mark nullifier used.
  * @param {object} payload - { proof, publicInputs: { pepper, currentTime, expectedAudHash, googleKeyHash }, publicOutputs: { nullifier } }
  * @returns {Promise<{ valid: true, nullifierHash: string }>}
  */
@@ -48,6 +76,10 @@ async function verifyJwtCircuitProof(payload) {
     hasPublicOutputs: !!payload?.publicOutputs,
     hasNullifier: !!payload?.publicOutputs?.nullifier
   });
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.payload_shape", {
+    publicInputsKeys: payload?.publicInputs ? Object.keys(payload.publicInputs) : [],
+    publicOutputsKeys: payload?.publicOutputs ? Object.keys(payload.publicOutputs) : []
+  });
 
   const { proof: proofRaw, publicInputs, publicOutputs } = payload;
   if (!proofRaw || !publicInputs || !publicOutputs || !publicOutputs.nullifier) {
@@ -55,7 +87,7 @@ async function verifyJwtCircuitProof(payload) {
     throw new Error("INVALID_JWT_CIRCUIT_PAYLOAD");
   }
   const proof = proofRaw.proof !== undefined ? proofRaw.proof : proofRaw;
-  logBasic("jwtCircuit.verifyJwtCircuitProof.proof_resolved", {
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.proof_resolved", {
     proofKeys: proof && typeof proof === "object" ? Object.keys(proof) : [],
     pi_aType: proof?.pi_a == null ? "null" : Array.isArray(proof.pi_a) ? "array" : typeof proof.pi_a,
     pi_aLen: Array.isArray(proof?.pi_a) ? proof.pi_a.length : undefined,
@@ -78,6 +110,11 @@ async function verifyJwtCircuitProof(payload) {
   const nullifier = String(publicOutputs.nullifier);
   const currentTime = parseInt(publicInputs.currentTime, 10);
   logBasic("jwtCircuit.verifyJwtCircuitProof.parsed", { nullifierLen: nullifier.length, currentTime, currentTimeNaN: Number.isNaN(currentTime) });
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.parsed_inputs", {
+    pepperLen: String(publicInputs.pepper ?? "").length,
+    expectedAudHashPrefix: String(publicInputs.expectedAudHash ?? "").slice(0, 12) + "…",
+    googleKeyHashPrefix: String(publicInputs.googleKeyHash ?? "").slice(0, 12) + "…"
+  });
   if (Number.isNaN(currentTime)) {
     logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "INVALID_TIMESTAMP" });
     throw new Error("INVALID_TIMESTAMP");
@@ -85,39 +122,59 @@ async function verifyJwtCircuitProof(payload) {
 
   logBasic("jwtCircuit.verifyJwtCircuitProof.step", { step: 1, name: "time_window" });
   const now = Math.floor(Date.now() / 1000);
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.time_check", { currentTime, now, skew: TIME_SKEW_SECONDS, diff: Math.abs(currentTime - now) });
   if (Math.abs(currentTime - now) > TIME_SKEW_SECONDS) {
     logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "TIMESTAMP_OUT_OF_RANGE", currentTime, now, skew: TIME_SKEW_SECONDS });
     throw new Error("TIMESTAMP_OUT_OF_RANGE");
   }
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.time_window.pass");
 
-  logBasic("jwtCircuit.verifyJwtCircuitProof.step", { step: 2, name: "replay_revocation" });
+  logBasic("jwtCircuit.verifyJwtCircuitProof.step", { step: 2, name: "server_side_hashes" });
+  try {
+    await validateServerSideHashes(publicInputs);
+  } catch (err) {
+    logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "SERVER_SIDE_HASH_VALIDATION", message: err.message });
+    throw err;
+  }
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.server_side_hashes.pass");
+
+  logBasic("jwtCircuit.verifyJwtCircuitProof.step", { step: 3, name: "replay_revocation" });
   if (await isJwtProofReplay(nullifier, currentTime)) {
-    logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "PROOF_REPLAY_DETECTED" });
+    logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "PROOF_REPLAY_DETECTED", nullifierPrefix: nullifier.slice(0, 12) + "…", currentTime });
     throw new Error("PROOF_REPLAY_DETECTED");
   }
   if (await isNullifierRevoked(nullifier)) {
-    logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "NULLIFIER_REVOKED" });
+    logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "NULLIFIER_REVOKED", nullifierPrefix: nullifier.slice(0, 12) + "…" });
     throw new Error("NULLIFIER_REVOKED");
   }
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.replay_revocation.pass");
 
-  logBasic("jwtCircuit.verifyJwtCircuitProof.step", { step: 3, name: "groth16_verify" });
+  logBasic("jwtCircuit.verifyJwtCircuitProof.step", { step: 4, name: "groth16_verify" });
   const snarkjs = require("snarkjs");
   const vkey = loadVerificationKey();
   const hasIC = Array.isArray(vkey.IC) && vkey.IC.length >= 2;
-  logBasic("jwtCircuit.verifyJwtCircuitProof.vkey", { hasIC, icLen: vkey.IC?.length });
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.vkey", { nPublic: vkey.nPublic, hasIC, icLen: vkey.IC?.length });
   if (!hasIC) {
     logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "JWT_CIRCUIT_VKEY_INVALID" });
     throw new Error("JWT_CIRCUIT_VKEY_INVALID");
   }
-  const publicSignals = buildPublicSignals(publicInputs, publicOutputs);
-  logBasic("jwtCircuit.verifyJwtCircuitProof.publicSignals", { isArray: Array.isArray(publicSignals), length: publicSignals?.length, firstLen: publicSignals?.[0]?.length });
+  if (vkey.nPublic >= 69) {
+    const hasModulus = Array.isArray(publicInputs.modulus) && publicInputs.modulus.length === 32;
+    const hasExpRsa = Array.isArray(publicInputs.expRsa) && publicInputs.expRsa.length === 32;
+    if (!hasModulus || !hasExpRsa) {
+      logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "RSA_PUBLIC_INPUTS_MISSING", hasModulus, hasExpRsa });
+      throw new Error("INVALID_JWT_CIRCUIT_PAYLOAD");
+    }
+  }
+  const publicSignals = buildPublicSignals(publicInputs, publicOutputs, vkey);
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.publicSignals_built", { isArray: Array.isArray(publicSignals), length: publicSignals?.length, firstLen: publicSignals?.[0]?.length });
   if (!Array.isArray(publicSignals) || publicSignals.length < 1) {
     logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "invalid_publicSignals_array" });
     throw new Error("INVALID_JWT_CIRCUIT_PAYLOAD");
   }
   let isValid;
   try {
-    logBasic("jwtCircuit.verifyJwtCircuitProof.snarkjs_verify_calling");
+    logVerbose("jwtCircuit.verifyJwtCircuitProof.snarkjs_verify_calling", { publicSignalsLength: publicSignals.length });
     isValid = await snarkjs.groth16.verify(vkey, publicSignals, proof);
     logBasic("jwtCircuit.verifyJwtCircuitProof.snarkjs_verify_result", { isValid });
   } catch (err) {
@@ -132,10 +189,12 @@ async function verifyJwtCircuitProof(payload) {
     logBasic("jwtCircuit.verifyJwtCircuitProof.reject", { step: "INVALID_PROOF" });
     throw new Error("INVALID_PROOF");
   }
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.groth16.pass");
 
-  logBasic("jwtCircuit.verifyJwtCircuitProof.step", { step: 4, name: "mark_jwt_proof_used" });
+  logBasic("jwtCircuit.verifyJwtCircuitProof.step", { step: 5, name: "mark_jwt_proof_used" });
   await markJwtProofUsed(nullifier, currentTime);
   logBasic("jwtCircuit.verifyJwtCircuitProof.success", { nullifierPrefix: nullifier.slice(0, 16) + "…" });
+  logVerbose("jwtCircuit.verifyJwtCircuitProof.done", { nullifierLen: nullifier.length });
   return { valid: true, nullifierHash: nullifier };
 }
 

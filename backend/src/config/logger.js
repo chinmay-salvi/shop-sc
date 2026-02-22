@@ -6,6 +6,11 @@ const MODES = ["disabled", "basic", "verbose"];
 const mode = (process.env.LOG_MODE || "basic").toLowerCase();
 const level = MODES.includes(mode) ? mode : "basic";
 
+// Helper to generate ISO timestamp
+function getTimestamp() {
+  return new Date().toISOString();
+}
+
 function isEnabled(minLevel) {
   const order = { disabled: 0, basic: 1, verbose: 2 };
   return order[level] >= order[minLevel];
@@ -23,13 +28,15 @@ function formatData(data) {
 
 function logBasic(message, data) {
   if (isEnabled("basic")) {
-    console.log(`[basic] ${message}${formatData(data)}`);
+    // Added [${getTimestamp()}]
+    console.log(`[${getTimestamp()}] [basic] ${message}${formatData(data)}`);
   }
 }
 
 function logVerbose(message, data) {
   if (isEnabled("verbose")) {
-    console.log(`[verbose] ${message}${formatData(data)}`);
+    // Added [${getTimestamp()}]
+    console.log(`[${getTimestamp()}] [verbose] ${message}${formatData(data)}`);
   }
 }
 

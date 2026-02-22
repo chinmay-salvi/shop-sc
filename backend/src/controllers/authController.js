@@ -65,10 +65,13 @@ async function enroll(req, res) {
 }
 
 async function verifyProof(req, res) {
-  logBasic("auth.verifyProof started");
+  logBasic("auth.verifyProof started", { isJwtCircuit: !!req.jwtCircuit });
+  logVerbose("auth.verifyProof.req", { bodyKeys: req.body ? Object.keys(req.body) : [], jwtCircuit: !!req.jwtCircuit });
   try {
     if (req.jwtCircuit) {
+      logVerbose("auth.verifyProof.jwt_circuit_path.entry");
       const verification = await verifyJwtCircuitProof(req.body);
+      logVerbose("auth.verifyProof.jwt_circuit_path.verification_done", { nullifierPrefix: verification.nullifierHash?.slice(0, 12) + "…" });
       const sub = verification.nullifierHash;
       const token = jwt.sign(
         { sub, nullifierHash: sub },
@@ -76,11 +79,13 @@ async function verifyProof(req, res) {
         { expiresIn: JWT_EXPIRY }
       );
       logBasic("auth.verifyProof success (JWT circuit)", { subPrefix: String(sub).slice(0, 12) + "…" });
+      logVerbose("auth.verifyProof.jwt_circuit_path.session_issued", { tokenLen: token?.length, expiresIn: JWT_EXPIRY });
       return res.json({ token, expiresIn: JWT_EXPIRY });
     }
 
+    logVerbose("auth.verifyProof.semaphore_path.entry");
     const { stableId, ...proofData } = req.body;
-    logVerbose("auth.verifyProof", {
+    logVerbose("auth.verifyProof.semaphore", {
       hasStableId: !!stableId,
       proofKeys: Object.keys(proofData || {})
     });
@@ -92,20 +97,31 @@ async function verifyProof(req, res) {
       { expiresIn: JWT_EXPIRY }
     );
     logBasic("auth.verifyProof success", { subPrefix: stableId ? String(stableId).slice(0, 8) + "…" : "" });
+    logVerbose("auth.verifyProof.semaphore_path.session_issued");
     return res.json({ token, expiresIn: JWT_EXPIRY });
   } catch (error) {
     const message = error.message || "UNKNOWN_ERROR";
     logBasic("auth.verifyProof error", { message });
-    if (
-      message.startsWith("STALE_GROUP_ROOT") ||
-      message === "PROOF_REPLAY_DETECTED" ||
-      message === "INVALID_PROOF" ||
-      message === "INVALID_SIGNAL" ||
-      message === "NULLIFIER_REVOKED" ||
-      message === "TIMESTAMP_OUT_OF_RANGE" ||
+    logVerbose("auth.verifyProof.error_detail", { name: error.name, message });
+    const clientErrorCodes = [
+      "STALE_GROUP_ROOT",
+      "PROOF_REPLAY_DETECTED",
+      "INVALID_PROOF",
+      "INVALID_SIGNAL",
+      "NULLIFIER_REVOKED",
+      "TIMESTAMP_OUT_OF_RANGE",
+      "GOOGLE_KEY_HASH_MISMATCH",
+      "EXPECTED_AUD_HASH_MISMATCH",
+      "JWKS_FETCH_FAILED",
+      "JWKS_PARSE_FAILED",
+      "JWKS_FETCH_TIMEOUT",
+      "JWKS_NO_KEYS"
+    ];
+    const isClientError =
+      clientErrorCodes.some((c) => message === c || message.startsWith(c)) ||
       message.startsWith("INVALID_JWT_CIRCUIT") ||
-      message.startsWith("JWT_CIRCUIT_VKEY")
-    ) {
+      message.startsWith("JWT_CIRCUIT_VKEY");
+    if (isClientError) {
       return res.status(400).json({ error: message });
     }
     return res.status(500).json({ error: message });
