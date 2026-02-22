@@ -31,6 +31,16 @@ async function ensureSchema() {
   `);
 
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS used_jwt_proofs (
+      id BIGSERIAL PRIMARY KEY,
+      nullifier_hash TEXT NOT NULL,
+      client_time TEXT NOT NULL,
+      used_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(nullifier_hash, client_time)
+    );
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS listings (
       id BIGSERIAL PRIMARY KEY,
       owner_id TEXT NOT NULL,

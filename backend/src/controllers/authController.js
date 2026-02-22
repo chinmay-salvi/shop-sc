@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const { verifyAccessProof } = require("../services/zkpService");
+const { verifyJwtCircuitProof } = require("../services/jwtCircuitService");
 const { uscGroup } = require("../services/groupManager");
 const { verifyUSCGoogleToken } = require("../services/googleAuth");
 const { saveBackup, getBackup } = require("../models/identityBackup");
@@ -66,6 +67,18 @@ async function enroll(req, res) {
 async function verifyProof(req, res) {
   logBasic("auth.verifyProof started");
   try {
+    if (req.jwtCircuit) {
+      const verification = await verifyJwtCircuitProof(req.body);
+      const sub = verification.nullifierHash;
+      const token = jwt.sign(
+        { sub, nullifierHash: sub },
+        process.env.JWT_SECRET || "dev-secret",
+        { expiresIn: JWT_EXPIRY }
+      );
+      logBasic("auth.verifyProof success (JWT circuit)", { subPrefix: String(sub).slice(0, 12) + "…" });
+      return res.json({ token, expiresIn: JWT_EXPIRY });
+    }
+
     const { stableId, ...proofData } = req.body;
     logVerbose("auth.verifyProof", {
       hasStableId: !!stableId,
@@ -73,7 +86,6 @@ async function verifyProof(req, res) {
     });
     const verification = await verifyAccessProof(proofData, uscGroup.getRoot());
     logBasic("auth.verifyProof proof valid");
-    // Cross-session identity: sub is client-derived stable pseudonym (same identity → same sub)
     const token = jwt.sign(
       { sub: stableId, nullifierHash: verification.nullifierHash },
       process.env.JWT_SECRET || "dev-secret",
@@ -89,7 +101,10 @@ async function verifyProof(req, res) {
       message === "PROOF_REPLAY_DETECTED" ||
       message === "INVALID_PROOF" ||
       message === "INVALID_SIGNAL" ||
-      message === "NULLIFIER_REVOKED"
+      message === "NULLIFIER_REVOKED" ||
+      message === "TIMESTAMP_OUT_OF_RANGE" ||
+      message.startsWith("INVALID_JWT_CIRCUIT") ||
+      message.startsWith("JWT_CIRCUIT_VKEY")
     ) {
       return res.status(400).json({ error: message });
     }

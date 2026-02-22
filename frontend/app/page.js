@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import {
@@ -9,9 +9,11 @@ import {
   verifyProofAndCreateSession,
   backupIdentityWithPassword,
   recoverIdentityWithPassword,
-  isEnrolled
+  isEnrolled,
+  USE_JWT_ZK_LOGIN,
+  loginWithJwtZk
 } from "../lib/zkp";
-import { getToken } from "../lib/auth";
+import { getToken, clearToken } from "../lib/auth";
 
 const GoogleLogin = dynamic(
   () => import("@react-oauth/google").then((m) => m.GoogleLogin),
@@ -25,6 +27,8 @@ export default function HomePage() {
   const [devEmail, setDevEmail] = useState("");
   const [recoveryPassword, setRecoveryPassword] = useState("");
   const [backupPassword, setBackupPassword] = useState("");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   const handleGoogleCredential = async (credentialResponse) => {
     const idToken = credentialResponse?.credential;
@@ -33,11 +37,17 @@ export default function HomePage() {
       return;
     }
     try {
+      if (USE_JWT_ZK_LOGIN) {
+        setStatus("Generating ZK proof (this may take a moment)...");
+        await loginWithJwtZk(idToken);
+        setStatus("Signed in. Go to Listings or Chats.");
+        return;
+      }
       setStatus("Enrolling with Google...");
       await enrollWithGoogle(idToken);
       setStatus("Enrolled. Now click Verify Proof to get a session.");
     } catch (e) {
-      setStatus(`Enroll failed: ${e.message}`);
+      setStatus(`Sign-in failed: ${e.message}`);
     }
   };
 
@@ -91,15 +101,38 @@ export default function HomePage() {
     }
   };
 
-  const enrolled = isEnrolled();
-  const hasSession = typeof window !== "undefined" && !!getToken();
+  const handleLogout = () => {
+    clearToken();
+    setStatus("Signed out.");
+  };
+
+  const enrolled = mounted && isEnrolled();
+  const hasSession = mounted && !!getToken();
+  const showLegacyEnroll = !USE_JWT_ZK_LOGIN && !enrolled;
+  const showZkLogin = USE_JWT_ZK_LOGIN && !hasSession;
 
   return (
     <main style={{ maxWidth: 720, margin: "2rem auto", fontFamily: "sans-serif" }}>
       <h1>shop-sc</h1>
       <p>USC-only, privacy-preserving marketplace. No PII stored.</p>
 
-      {!enrolled && (
+      {showZkLogin && (
+        <>
+          <p>Sign in with Google (@usc.edu). Your token stays in this browser; only a ZK proof is sent.</p>
+          {hasGoogleClientId && (
+            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
+              <GoogleLogin
+                onSuccess={handleGoogleCredential}
+                onError={() => setStatus("Google sign-in failed.")}
+                useOneTap={false}
+                hosted_domain="usc.edu"
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {showLegacyEnroll && (
         <>
           <p>Enroll with Google (@usc.edu) or use dev email:</p>
           {hasGoogleClientId && (
@@ -141,7 +174,7 @@ export default function HomePage() {
         </>
       )}
 
-      {enrolled && (
+      {!USE_JWT_ZK_LOGIN && enrolled && (
         <>
           <p style={{ fontSize: "0.9em", color: "#666" }}>
             Use <strong>Verify proof</strong> to log in. Back up your identity so you can recover it in any session or device and keep editing your listings.
@@ -152,6 +185,10 @@ export default function HomePage() {
           {hasSession && (
             <span style={{ marginLeft: "0.5rem" }}>
               <Link href="/listings">Listings</Link> | <Link href="/chats">Chats</Link>
+              {" · "}
+              <button type="button" onClick={handleLogout} style={{ marginLeft: "0.25rem" }}>
+                Log out
+              </button>
             </span>
           )}
           <div style={{ marginTop: "1rem", padding: "0.75rem", background: "#f9f9f9", borderRadius: 6 }}>
@@ -170,6 +207,17 @@ export default function HomePage() {
             </button>
           </div>
         </>
+      )}
+
+      {USE_JWT_ZK_LOGIN && hasSession && (
+        <p>
+          <Link href="/listings">Listings</Link> | <Link href="/chats">Chats</Link>
+          {" · "}
+          <button type="button" onClick={handleLogout}>
+            Log out
+          </button>
+          <span style={{ fontSize: "0.85em", color: "#666", marginLeft: "0.5rem" }}>(session: 1 hour)</span>
+        </p>
       )}
 
       <p style={{ marginTop: "1rem" }}>{status}</p>
