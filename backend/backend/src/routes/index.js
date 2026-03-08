@@ -1,0 +1,16 @@
+const express = require("express");
+const authRoutes = require("./auth");
+const listingsRoutes = require("./listings");
+const chatRoutes = require("./chat");
+const { getGroupRoot, getGroup } = require("../controllers/groupController");
+
+const router = express.Router();
+
+router.get("/health", (_req, res) => res.json({ ok: true }));
+router.get("/group-root", getGroupRoot);
+router.get("/group", getGroup);
+router.use("/auth", authRoutes);
+router.use("/listings", listingsRoutes);
+router.use("/chats", chatRoutes);
+
+module.exports = router;
