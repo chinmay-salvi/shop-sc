@@ -1,4 +1,4 @@
-# ShopSC â€” The Privacy-First USC Marketplace
+# ShopSC The Privacy-First USC Marketplace
 
 > Buy and sell within the USC community using zero-knowledge proofs. Your identity is verified, never stored.
 
