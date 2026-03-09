@@ -2,6 +2,7 @@ const {
   createListing,
   getListingsByOwner,
   getAllListings,
+  getListingById,
   updateListing,
   deleteListing
 } = require("../models/listing");
@@ -25,13 +26,26 @@ function listAll(_req, res) {
     });
 }
 
+function getOne(req, res) {
+  const listingId = Number(req.params.id);
+  if (!Number.isInteger(listingId) || listingId < 1) {
+    return res.status(400).json({ error: "INVALID_ID" });
+  }
+  getListingById(listingId)
+    .then((row) => (row ? res.json(row) : res.status(404).json({ error: "LISTING_NOT_FOUND" })))
+    .catch((err) => {
+      console.error(err);
+      res.status(500).json({ error: "LISTING_FETCH_FAILED" });
+    });
+}
+
 function create(req, res) {
   const ownerId = req.user.sub;
-  const { title, description } = req.body || {};
+  const { title, description, price, category, condition, image_url, location } = req.body || {};
   if (!title || typeof title !== "string") {
     return res.status(400).json({ error: "MISSING_TITLE" });
   }
-  createListing(ownerId, { title, description })
+  createListing(ownerId, { title, description, price, category, condition, image_url, location })
     .then((row) => res.status(201).json(row))
     .catch((err) => {
       console.error(err);
@@ -42,14 +56,14 @@ function create(req, res) {
 function update(req, res) {
   const ownerId = req.user.sub;
   const listingId = Number(req.params.id);
-  const { title, description } = req.body || {};
+  const { title, description, price, category, condition, image_url, location } = req.body || {};
   if (!Number.isInteger(listingId) || listingId < 1) {
     return res.status(400).json({ error: "INVALID_ID" });
   }
   if (!title || typeof title !== "string") {
     return res.status(400).json({ error: "MISSING_TITLE" });
   }
-  updateListing(ownerId, listingId, { title, description: description ?? null })
+  updateListing(ownerId, listingId, { title, description: description ?? null, price, category, condition, image_url, location })
     .then((row) => (row ? res.json(row) : res.status(404).json({ error: "LISTING_NOT_FOUND" })))
     .catch((err) => {
       console.error(err);
@@ -74,6 +88,7 @@ function remove(req, res) {
 module.exports = {
   listMine,
   listAll,
+  getOne,
   create,
   update,
   remove

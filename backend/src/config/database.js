@@ -46,9 +46,26 @@ async function ensureSchema() {
       owner_id TEXT NOT NULL,
       title TEXT NOT NULL,
       description TEXT,
+      price NUMERIC,
+      category TEXT,
+      condition TEXT,
+      image_url TEXT,
+      location TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  // Add columns if table already exists (safe for existing DBs)
+  const addCol = async (col, type) => {
+    try {
+      await pool.query(`ALTER TABLE listings ADD COLUMN IF NOT EXISTS ${col} ${type}`);
+    } catch (_) { /* column already exists */ }
+  };
+  await addCol('price', 'NUMERIC');
+  await addCol('category', 'TEXT');
+  await addCol('condition', 'TEXT');
+  await addCol('image_url', 'TEXT');
+  await addCol('location', 'TEXT');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS identity_backups (

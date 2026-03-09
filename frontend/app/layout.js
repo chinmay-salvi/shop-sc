@@ -1,8 +1,10 @@
 import GoogleProvider from "../components/GoogleProvider";
+import Navbar from "../components/Navbar";
+import "./globals.css";
 
 export const metadata = {
-  title: "shop-sc",
-  description: "Privacy-preserving USC marketplace",
+  title: "ShopSC — Trojan Marketplace",
+  description: "Privacy-preserving USC-only marketplace. Buy and sell safely with zero-knowledge proof verification.",
   icons: { icon: "/icon.svg" }
 };
 
@@ -10,7 +12,12 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body>
-        <GoogleProvider>{children}</GoogleProvider>
+        <GoogleProvider>
+          <Navbar />
+          <div className="page-content">
+            {children}
+          </div>
+        </GoogleProvider>
       </body>
     </html>
   );

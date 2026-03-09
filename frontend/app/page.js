@@ -2,225 +2,160 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
-import {
-  enrollWithGoogle,
-  enrollWithEmail,
-  verifyProofAndCreateSession,
-  backupIdentityWithPassword,
-  recoverIdentityWithPassword,
-  isEnrolled,
-  USE_JWT_ZK_LOGIN,
-  loginWithJwtZk
-} from "../lib/zkp";
-import { getToken, clearToken } from "../lib/auth";
+import { getToken } from "../lib/auth";
+import { apiFetch } from "../lib/api";
+import ListingCard from "../components/ListingCard";
 
-const GoogleLogin = dynamic(
-  () => import("@react-oauth/google").then((m) => m.GoogleLogin),
-  { ssr: false }
-);
+const CATEGORIES = [
+  { name: "Tickets", icon: "🎟️" },
+  { name: "Electronics", icon: "💻" },
+  { name: "Furniture", icon: "🪑" },
+  { name: "Textbooks", icon: "📚" },
+  { name: "Clothing", icon: "👕" },
+  { name: "Sports", icon: "⚽" },
+  { name: "Music", icon: "🎵" },
+  { name: "Other", icon: "📦" },
+];
 
-const hasGoogleClientId = typeof process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID === "string" && process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID.length > 0;
+const VALUE_PROPS = [
+  {
+    icon: "🛡️",
+    title: "Verified Trojans Only",
+    description: "Every user is verified through USC Google accounts. Only @usc.edu students can access the marketplace.",
+    color: "#DCFCE7",
+  },
+  {
+    icon: "🔒",
+    title: "Privacy First",
+    description: "Zero-Knowledge proof verification ensures your identity stays anonymous. No personal information stored.",
+    color: "#FEF3C7",
+  },
+  {
+    icon: "✨",
+    title: "Safe & Secure",
+    description: "Built with end-to-end security. Your data is encrypted and your identity is protected by cryptographic proofs.",
+    color: "#EDE9FE",
+  },
+];
 
 export default function HomePage() {
-  const [status, setStatus] = useState("");
-  const [devEmail, setDevEmail] = useState("");
-  const [recoveryPassword, setRecoveryPassword] = useState("");
-  const [backupPassword, setBackupPassword] = useState("");
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const [recentListings, setRecentListings] = useState([]);
+  const [listingCount, setListingCount] = useState(0);
 
-  const handleGoogleCredential = async (credentialResponse) => {
-    const idToken = credentialResponse?.credential;
-    if (!idToken) {
-      setStatus("No credential from Google.");
-      return;
-    }
-    try {
-      if (USE_JWT_ZK_LOGIN) {
-        setStatus("Generating ZK proof (this may take a moment)...");
-        await loginWithJwtZk(idToken);
-        setStatus("Signed in. Go to Listings or Chats.");
-        return;
-      }
-      setStatus("Enrolling with Google...");
-      await enrollWithGoogle(idToken);
-      setStatus("Enrolled. Now click Verify Proof to get a session.");
-    } catch (e) {
-      setStatus(`Sign-in failed: ${e.message}`);
-    }
-  };
+  useEffect(() => {
+    setMounted(true);
+    apiFetch("/listings")
+      .then((data) => {
+        const arr = Array.isArray(data) ? data : data?.listings || [];
+        setRecentListings(arr.slice(0, 4));
+        setListingCount(arr.length);
+      })
+      .catch(() => { });
+  }, []);
 
-  const handleDevEnroll = async () => {
-    try {
-      setStatus("Enrolling (dev)...");
-      await enrollWithEmail(devEmail);
-      setStatus("Enrolled. Now click Verify Proof to get a session.");
-    } catch (e) {
-      setStatus(`Enroll failed: ${e.message}`);
-    }
-  };
-
-  const handleVerify = async () => {
-    try {
-      setStatus("Generating proof (3–8s)...");
-      await verifyProofAndCreateSession();
-      setStatus("Session created. Go to Listings or Chats.");
-    } catch (e) {
-      setStatus(`Verify failed: ${e.message}`);
-    }
-  };
-
-  const handleBackup = async () => {
-    if (!backupPassword.trim()) {
-      setStatus("Enter a recovery password to back up.");
-      return;
-    }
-    try {
-      setStatus("Backing up identity...");
-      await backupIdentityWithPassword(backupPassword.trim());
-      setStatus("Identity backed up. Use this password to recover on another session or device.");
-      setBackupPassword("");
-    } catch (e) {
-      setStatus(`Backup failed: ${e.message}`);
-    }
-  };
-
-  const handleRecover = async () => {
-    if (!recoveryPassword.trim()) {
-      setStatus("Enter your recovery password.");
-      return;
-    }
-    try {
-      setStatus("Recovering identity...");
-      await recoverIdentityWithPassword(recoveryPassword.trim());
-      setStatus("Identity recovered. Click Verify proof to log in.");
-      setRecoveryPassword("");
-    } catch (e) {
-      setStatus(`Recovery failed: ${e.message}`);
-    }
-  };
-
-  const handleLogout = () => {
-    clearToken();
-    setStatus("Signed out.");
-  };
-
-  const enrolled = mounted && isEnrolled();
   const hasSession = mounted && !!getToken();
-  const showLegacyEnroll = !USE_JWT_ZK_LOGIN && !enrolled;
-  const showZkLogin = USE_JWT_ZK_LOGIN && !hasSession;
 
   return (
-    <main style={{ maxWidth: 720, margin: "2rem auto", fontFamily: "sans-serif" }}>
-      <h1>shop-sc</h1>
-      <p>USC-only, privacy-preserving marketplace. No PII stored.</p>
-
-      {showZkLogin && (
-        <>
-          <p>Sign in with Google (@usc.edu). Your token stays in this browser; only a ZK proof is sent.</p>
-          {hasGoogleClientId && (
-            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
-              <GoogleLogin
-                onSuccess={handleGoogleCredential}
-                onError={() => setStatus("Google sign-in failed.")}
-                useOneTap={false}
-                hosted_domain="usc.edu"
-              />
-            </div>
-          )}
-        </>
-      )}
-
-      {showLegacyEnroll && (
-        <>
-          <p>Enroll with Google (@usc.edu) or use dev email:</p>
-          {hasGoogleClientId && (
-            <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem", alignItems: "center" }}>
-              <GoogleLogin
-                onSuccess={handleGoogleCredential}
-                onError={() => setStatus("Google sign-in failed.")}
-                useOneTap={false}
-                hosted_domain="usc.edu"
-              />
-            </div>
-          )}
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "1rem" }}>
-            <input
-              style={{ padding: "0.5rem", width: 240 }}
-              placeholder="you@usc.edu (dev)"
-              value={devEmail}
-              onChange={(e) => setDevEmail(e.target.value)}
-            />
-            <button type="button" onClick={handleDevEnroll}>
-              Enroll (dev)
-            </button>
-          </div>
-          <div style={{ borderTop: "1px solid #eee", paddingTop: "1rem", marginTop: "1rem" }}>
-            <p style={{ fontSize: "0.9em", color: "#666", marginBottom: "0.5rem" }}>
-              Already enrolled? Recover your identity to access your listings in this session:
-            </p>
-            <input
-              type="password"
-              style={{ padding: "0.5rem", width: 240, marginRight: "0.5rem" }}
-              placeholder="Recovery password"
-              value={recoveryPassword}
-              onChange={(e) => setRecoveryPassword(e.target.value)}
-            />
-            <button type="button" onClick={handleRecover}>
-              Recover identity
-            </button>
-          </div>
-        </>
-      )}
-
-      {!USE_JWT_ZK_LOGIN && enrolled && (
-        <>
-          <p style={{ fontSize: "0.9em", color: "#666" }}>
-            Use <strong>Verify proof</strong> to log in. Back up your identity so you can recover it in any session or device and keep editing your listings.
+    <>
+      {/* ===== Hero Section ===== */}
+      <section className="hero">
+        <div className="container hero-content">
+          <div className="hero-badge">USC Exclusive Marketplace</div>
+          <h1>The Trojan Marketplace Built on Trust</h1>
+          <p>
+            Buy and sell safely within the USC community. Anonymous verification,
+            zero compromises on privacy.
           </p>
-          <button type="button" onClick={handleVerify} style={{ marginRight: "0.5rem" }}>
-            Verify proof (login)
-          </button>
-          {hasSession && (
-            <span style={{ marginLeft: "0.5rem" }}>
-              <Link href="/listings">Listings</Link> | <Link href="/chats">Chats</Link>
-              {" · "}
-              <button type="button" onClick={handleLogout} style={{ marginLeft: "0.25rem" }}>
-                Log out
+          <div className="hero-buttons">
+            <Link href="/marketplace" className="btn btn-lg" style={{ background: "var(--white)", color: "var(--dark)" }}>
+              Browse Marketplace →
+            </Link>
+            {hasSession ? (
+              <Link href="/marketplace/create" className="btn btn-lg btn-outline" style={{ borderColor: "rgba(255,255,255,0.5)", color: "var(--white)" }}>
+                List an Item
+              </Link>
+            ) : (
+              <button
+                className="btn btn-lg btn-outline"
+                style={{ borderColor: "rgba(255,255,255,0.5)", color: "var(--white)" }}
+                onClick={() => window.dispatchEvent(new Event('openAuthModal'))}
+              >
+                List an Item
               </button>
-            </span>
-          )}
-          <div style={{ marginTop: "1rem", padding: "0.75rem", background: "#f9f9f9", borderRadius: 6 }}>
-            <p style={{ fontSize: "0.9em", marginBottom: "0.5rem" }}>
-              <strong>Back up identity</strong> (use a password you’ll remember; needed to recover on another session/device):
-            </p>
-            <input
-              type="password"
-              style={{ padding: "0.5rem", width: 220, marginRight: "0.5rem" }}
-              placeholder="Recovery password"
-              value={backupPassword}
-              onChange={(e) => setBackupPassword(e.target.value)}
-            />
-            <button type="button" onClick={handleBackup}>
-              Back up
-            </button>
+            )}
           </div>
-        </>
+          <div className="hero-stats">
+            <div className="hero-stat">
+              <span className="hero-stat-icon">✓</span>
+              {listingCount > 0 ? `${listingCount}+ Active Listings` : "Active Listings"}
+            </div>
+            <div className="hero-stat">
+              <span className="hero-stat-icon">✓</span>
+              100% Verified Trojans
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ===== Value Propositions ===== */}
+      <section className="section">
+        <div className="container">
+          <div className="grid-3">
+            {VALUE_PROPS.map((vp) => (
+              <div key={vp.title} className="card value-card">
+                <div className="value-card-icon" style={{ background: vp.color }}>{vp.icon}</div>
+                <h3>{vp.title}</h3>
+                <p>{vp.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ===== Categories ===== */}
+      <section className="section" style={{ paddingTop: 0 }}>
+        <div className="container">
+          <div className="section-header">
+            <h2>Browse Categories</h2>
+            <Link href="/marketplace" className="btn btn-ghost">View all →</Link>
+          </div>
+          <div className="grid-4">
+            {CATEGORIES.map((cat) => (
+              <Link key={cat.name} href={`/marketplace?category=${encodeURIComponent(cat.name)}`}>
+                <div className="card category-card">
+                  <div className="category-card-icon">{cat.icon}</div>
+                  <h4>{cat.name}</h4>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ===== Recent Listings ===== */}
+      {recentListings.length > 0 && (
+        <section className="section" style={{ paddingTop: 0 }}>
+          <div className="container">
+            <div className="section-header">
+              <h2>Recent Listings</h2>
+              <Link href="/marketplace" className="btn btn-ghost">View all →</Link>
+            </div>
+            <div className="grid-2">
+              {recentListings.map((l) => (
+                <ListingCard key={l.id} listing={l} />
+              ))}
+            </div>
+          </div>
+        </section>
       )}
 
-      {USE_JWT_ZK_LOGIN && hasSession && (
-        <p>
-          <Link href="/listings">Listings</Link> | <Link href="/chats">Chats</Link>
-          {" · "}
-          <button type="button" onClick={handleLogout}>
-            Log out
-          </button>
-          <span style={{ fontSize: "0.85em", color: "#666", marginLeft: "0.5rem" }}>(session: 1 hour)</span>
-        </p>
-      )}
-
-      <p style={{ marginTop: "1rem" }}>{status}</p>
-    </main>
+      {/* ===== Footer ===== */}
+      <footer className="footer" style={{ marginTop: "2rem" }}>
+        <div className="container">
+          <p>© 2026 ShopSC — Trojan Marketplace. No PII stored. Privacy-preserving by design.</p>
+        </div>
+      </footer>
+    </>
   );
 }

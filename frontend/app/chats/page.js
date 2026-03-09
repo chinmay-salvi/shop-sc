@@ -1,19 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import { getToken } from "../../lib/auth";
 import { getStablePseudonym } from "../../lib/zkp";
 
-export default function ChatsPage() {
+function ChatsContent() {
+  const searchParams = useSearchParams();
+  const initialPartner = searchParams.get("with") || null;
+
   const [partners, setPartners] = useState([]);
   const [messages, setMessages] = useState([]);
-  const [selectedPartner, setSelectedPartner] = useState(null);
+  const [selectedPartner, setSelectedPartner] = useState(initialPartner);
   const [body, setBody] = useState("");
   const [myStableId, setMyStableId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [newChatId, setNewChatId] = useState("");
   const hasToken = typeof window !== "undefined" && !!getToken();
 
   useEffect(() => {
@@ -21,21 +26,22 @@ export default function ChatsPage() {
   }, []);
 
   useEffect(() => {
-    if (!hasToken) {
-      setLoading(false);
-      return;
-    }
+    if (!hasToken) { setLoading(false); return; }
     apiFetch("/chats/conversations")
-      .then((data) => setPartners(data.partners || []))
+      .then((data) => {
+        const p = data.partners || [];
+        setPartners(p);
+        // If initialPartner not in list, add it
+        if (initialPartner && !p.includes(initialPartner)) {
+          setPartners([initialPartner, ...p]);
+        }
+      })
       .catch(() => setPartners([]))
       .finally(() => setLoading(false));
-  }, [hasToken]);
+  }, [hasToken, initialPartner]);
 
   useEffect(() => {
-    if (!hasToken || !selectedPartner) {
-      setMessages([]);
-      return;
-    }
+    if (!hasToken || !selectedPartner) { setMessages([]); return; }
     apiFetch(`/chats/messages?with=${encodeURIComponent(selectedPartner)}`)
       .then((data) => setMessages(data.messages || []))
       .catch(() => setMessages([]));
@@ -47,92 +53,138 @@ export default function ChatsPage() {
     try {
       await apiFetch("/chats/messages", {
         method: "POST",
-        body: JSON.stringify({ recipient_id: selectedPartner, body: body.trim() })
+        body: JSON.stringify({ recipient_id: selectedPartner, body: body.trim() }),
       });
       setBody("");
-      apiFetch(`/chats/messages?with=${encodeURIComponent(selectedPartner)}`)
-        .then((data) => setMessages(data.messages || []));
+      const data = await apiFetch(`/chats/messages?with=${encodeURIComponent(selectedPartner)}`);
+      setMessages(data.messages || []);
     } catch (e) {
       setError(e.message);
     }
   };
 
+  const startNewChat = () => {
+    if (!newChatId.trim() || !/^[a-f0-9]{64}$/i.test(newChatId.trim())) {
+      setError("Enter a valid 64-character hex ID");
+      return;
+    }
+    const id = newChatId.trim();
+    if (!partners.includes(id)) setPartners((p) => [id, ...p]);
+    setSelectedPartner(id);
+    setNewChatId("");
+    setError("");
+  };
+
   if (!hasToken) {
     return (
-      <main style={{ maxWidth: 720, margin: "2rem auto", fontFamily: "sans-serif" }}>
-        <p><Link href="/">← Home</Link></p>
-        <p>Sign in (verify proof) to use chats.</p>
-      </main>
+      <div className="container" style={{ paddingTop: "3rem", textAlign: "center" }}>
+        <h2>Sign in to use Chats</h2>
+        <p className="text-muted mt-2">Verify your USC identity to message other Trojans.</p>
+        <Link href="/" className="btn btn-cardinal mt-3">Go to Sign In</Link>
+      </div>
     );
   }
 
-  if (loading) return <p>Loading...</p>;
+  if (loading) return <div className="container" style={{ paddingTop: "2rem" }}><p className="text-muted">Loading...</p></div>;
 
   return (
-    <main style={{ maxWidth: 720, margin: "2rem auto", fontFamily: "sans-serif" }}>
-      <p><Link href="/">← Home</Link></p>
-      <h1>Chats</h1>
-      <p style={{ fontSize: "0.9em", color: "#666" }}>Your ID (share to receive messages): …{myStableId.slice(-12)}</p>
-      {error && <p style={{ color: "red" }}>{error}</p>}
+    <div className="container" style={{ paddingTop: "1.5rem", paddingBottom: "3rem" }}>
+      <div style={{ marginBottom: "1rem" }}>
+        <h1 style={{ marginBottom: "0.25rem" }}>Messages</h1>
+        <p className="text-muted" style={{ fontSize: "0.85rem" }}>
+          Your ID (share to receive messages): <code style={{ background: "var(--light-bg)", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }}>…{myStableId.slice(-16)}</code>
+        </p>
+      </div>
+      {error && <p style={{ color: "var(--cardinal-red)", marginBottom: "1rem", fontSize: "0.9rem" }}>{error}</p>}
 
-      <div style={{ display: "flex", gap: "1rem", marginTop: "1rem" }}>
-        <div style={{ width: 200 }}>
-          <h3>Conversations</h3>
-          <ul style={{ listStyle: "none", padding: 0 }}>
-            {partners.map((p) => (
-              <li key={p}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedPartner(p)}
-                  style={{
-                    width: "100%",
-                    textAlign: "left",
-                    padding: "0.5rem",
-                    background: selectedPartner === p ? "#eee" : "transparent"
-                  }}
-                >
-                  …{p.slice(-8)}
-                </button>
-              </li>
-            ))}
-          </ul>
-          {partners.length === 0 && <p>No conversations yet. Share your ID to get messages.</p>}
+      <div className="chat-layout">
+        {/* Sidebar */}
+        <div className="chat-sidebar">
+          <div style={{ padding: "1rem", borderBottom: "1px solid var(--border-light)" }}>
+            <h3 style={{ fontSize: "1rem", marginBottom: "0.75rem" }}>Conversations</h3>
+            <div style={{ display: "flex", gap: "0.4rem" }}>
+              <input
+                className="input"
+                style={{ padding: "0.5rem 0.75rem", fontSize: "0.8rem" }}
+                placeholder="Paste user ID to chat..."
+                value={newChatId}
+                onChange={(e) => setNewChatId(e.target.value)}
+              />
+              <button className="btn btn-cardinal btn-sm" onClick={startNewChat} style={{ fontSize: "0.75rem", padding: "0.4rem 0.6rem" }}>+</button>
+            </div>
+          </div>
+          {partners.length === 0 ? (
+            <p style={{ padding: "1rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>No conversations yet</p>
+          ) : (
+            partners.map((p) => (
+              <div
+                key={p}
+                className={`chat-partner ${selectedPartner === p ? "chat-partner-active" : ""}`}
+                onClick={() => setSelectedPartner(p)}
+              >
+                <div className="avatar avatar-sm">AT</div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>…{p.slice(-8)}</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Anonymous Trojan</div>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
-        <div style={{ flex: 1 }}>
+        {/* Main chat */}
+        <div className="chat-main">
           {selectedPartner ? (
             <>
-              <h3>With …{selectedPartner.slice(-8)}</h3>
-              <ul style={{ listStyle: "none", padding: 0, maxHeight: 300, overflow: "auto" }}>
+              <div style={{ padding: "1rem 1.5rem", borderBottom: "1px solid var(--border-light)", display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <div className="avatar avatar-sm">AT</div>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem" }}>Anonymous Trojan</div>
+                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>…{selectedPartner.slice(-8)}</div>
+                </div>
+              </div>
+              <div className="chat-messages" style={{ minHeight: 300, maxHeight: "50vh" }}>
+                {messages.length === 0 && (
+                  <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem 0" }}>No messages yet. Say hello!</p>
+                )}
                 {messages.map((m) => (
-                  <li
+                  <div
                     key={m.id}
-                    style={{
-                      textAlign: m.sender_id === myStableId ? "right" : "left",
-                      marginBottom: "0.5rem"
-                    }}
+                    className={`chat-bubble ${m.sender_id === myStableId ? "chat-bubble-sent" : "chat-bubble-received"}`}
                   >
-                    <span style={{ display: "inline-block", padding: "0.25rem 0.5rem", background: "#f0f0f0", borderRadius: 8 }}>
-                      {m.body}
-                    </span>
-                  </li>
+                    {m.body}
+                  </div>
                 ))}
-              </ul>
-              <form onSubmit={sendMessage} style={{ marginTop: "0.5rem" }}>
+              </div>
+              <form className="chat-input-area" onSubmit={sendMessage}>
                 <input
-                  placeholder="Message"
+                  className="input"
+                  placeholder="Type a message..."
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
-                  style={{ width: "100%", padding: "0.5rem" }}
                 />
-                <button type="submit" style={{ marginTop: "0.25rem" }}>Send</button>
+                <button type="submit" className="btn btn-cardinal">Send</button>
               </form>
             </>
           ) : (
-            <p>Select a conversation or share your ID so others can message you.</p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, minHeight: 400 }}>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>💬</div>
+                <h3>Select a conversation</h3>
+                <p className="text-muted mt-1">Or paste a user ID to start chatting</p>
+              </div>
+            </div>
           )}
         </div>
       </div>
-    </main>
+    </div>
+  );
+}
+
+export default function ChatsPage() {
+  return (
+    <Suspense fallback={<div className="container" style={{ paddingTop: "2rem" }}><p className="text-muted">Loading...</p></div>}>
+      <ChatsContent />
+    </Suspense>
   );
 }
