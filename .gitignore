@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.env
+backend/.env
+frontend/.env.local
+coverage/
+circuits/build/
+circuits/*.ptau
+circuits/bin/
+frontend/public/zkp/jwt_usc_main_final.zkey
