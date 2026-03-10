@@ -19,12 +19,18 @@ const PLACEHOLDER_IMAGES = [
 export default function ListingCard({ listing, showOwner = true, showActions = false, onEdit, onDelete }) {
     const { id, title, price, category, condition, image_url, owner_id, created_at } = listing;
 
+    let displayImg = image_url || PLACEHOLDER_IMAGES[0];
+    if (image_url && image_url.startsWith("/uploads/")) {
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000/api";
+        displayImg = apiBase.replace("/api", "") + image_url;
+    }
+
     return (
         <div className="card card-clickable">
             <Link href={`/marketplace/${id}`} style={{ display: "block" }}>
                 <div className="listing-card-image">
                     <img
-                        src={image_url || PLACEHOLDER_IMAGES[0]}
+                        src={displayImg}
                         alt={title}
                         onError={(e) => { e.target.src = PLACEHOLDER_IMAGES[0]; }}
                     />
@@ -56,9 +62,9 @@ export default function ListingCard({ listing, showOwner = true, showActions = f
                 </div>
             </Link>
             {showActions && (
-                <div style={{ padding: "0 1.25rem 1.25rem", display: "flex", gap: "0.5rem" }}>
-                    <button className="btn btn-outline btn-sm" onClick={(e) => { e.preventDefault(); onEdit?.(listing); }} style={{ flex: 1 }}>Edit</button>
-                    <button className="btn btn-outline btn-sm" onClick={(e) => { e.preventDefault(); onDelete?.(listing.id); }} style={{ flex: 1, color: "var(--cardinal-red)" }}>Delete</button>
+                <div style={{ padding: "0 1.25rem 1.25rem", display: "flex", gap: "0.5rem" }} onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+                    <button className="btn btn-outline btn-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit?.(listing); }} style={{ flex: 1 }}>Edit</button>
+                    <button className="btn btn-outline btn-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete?.(listing.id); }} style={{ flex: 1, color: "var(--cardinal-red)" }}>Delete</button>
                 </div>
             )}
         </div>

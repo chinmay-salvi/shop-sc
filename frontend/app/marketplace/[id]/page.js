@@ -60,6 +60,12 @@ export default function ListingDetailPage() {
 
     const { title, description, price, category, condition, image_url, owner_id, location, created_at } = listing;
 
+    let displayImg = image_url || PLACEHOLDER_IMG;
+    if (image_url && image_url.startsWith("/uploads/")) {
+        const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000/api";
+        displayImg = apiBase.replace("/api", "") + image_url;
+    }
+
     return (
         <div className="container" style={{ paddingTop: "1.5rem", paddingBottom: "3rem" }}>
             <Link href="/marketplace" style={{ color: "var(--text-secondary)", fontSize: "0.9rem", display: "inline-flex", alignItems: "center", gap: "0.3rem", marginBottom: "1rem" }}>
@@ -68,7 +74,7 @@ export default function ListingDetailPage() {
 
             {/* Image */}
             <div className="detail-image">
-                <img src={image_url || PLACEHOLDER_IMG} alt={title} onError={(e) => { e.target.src = PLACEHOLDER_IMG; }} />
+                <img src={displayImg} alt={title} onError={(e) => { e.target.src = PLACEHOLDER_IMG; }} />
             </div>
 
             <div className="detail-info">

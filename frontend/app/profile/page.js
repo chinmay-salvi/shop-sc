@@ -15,6 +15,7 @@ export default function ProfilePage() {
     const [backupStatus, setBackupStatus] = useState("");
     const [editEntry, setEditEntry] = useState(null);
     const [editForm, setEditForm] = useState({ title: "", description: "", price: "", category: "", condition: "", location: "", image_url: "" });
+    const [listingToDelete, setListingToDelete] = useState(null);
     const hasToken = typeof window !== "undefined" && !!getToken();
 
     const loadListings = useCallback(() => {
@@ -30,11 +31,16 @@ export default function ProfilePage() {
         getStablePseudonym().then(setMyStableId).catch(() => { });
     }, [loadListings]);
 
-    const handleDelete = async (id) => {
-        if (!confirm("Delete this listing?")) return;
+    const handleDelete = (id) => {
+        setListingToDelete(id);
+    };
+
+    const confirmDelete = async () => {
+        if (!listingToDelete) return;
         try {
-            await apiFetch(`/listings/${id}`, { method: "DELETE" });
-            setListings((prev) => prev.filter((l) => l.id !== id));
+            await apiFetch(`/listings/${listingToDelete}`, { method: "DELETE" });
+            setListings((prev) => prev.filter((l) => l.id !== listingToDelete));
+            setListingToDelete(null);
         } catch (e) {
             alert("Delete failed: " + e.message);
         }
@@ -236,6 +242,28 @@ export default function ProfilePage() {
                                 <button type="button" className="btn btn-outline" onClick={() => setEditEntry(null)}>Cancel</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {listingToDelete && (
+                <div style={{
+                    position: "fixed", inset: 0,
+                    background: "rgba(0,0,0,0.5)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    zIndex: 2000, padding: "1rem"
+                }} onClick={(e) => { if (e.target === e.currentTarget) setListingToDelete(null); }}>
+                    <div className="card" style={{ maxWidth: 400, width: "100%", padding: "2rem", textAlign: "center" }}>
+                        <div style={{ fontSize: "3rem", marginBottom: "1rem" }}>⚠️</div>
+                        <h2 style={{ marginBottom: "0.5rem" }}>Delete Listing?</h2>
+                        <p style={{ color: "var(--text-secondary)", marginBottom: "1.5rem" }}>
+                            Are you sure you want to delete this listing? This action cannot be undone.
+                        </p>
+                        <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center" }}>
+                            <button type="button" className="btn btn-cardinal" onClick={confirmDelete} style={{ flex: 1 }}>Delete</button>
+                            <button type="button" className="btn btn-outline" onClick={() => setListingToDelete(null)} style={{ flex: 1 }}>Cancel</button>
+                        </div>
                     </div>
                 </div>
             )}

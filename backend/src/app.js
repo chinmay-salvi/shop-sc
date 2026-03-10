@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const { requestLogger } = require("./config/logger");
 const routes = require("./routes");
+const path = require("path");
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use(
   })
 );
 app.use(express.json({ limit: "1mb" }));
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use("/api", requestLogger, routes);
 
 app.use((err, _req, res, _next) => {

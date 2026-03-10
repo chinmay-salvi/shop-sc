@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch } from "../../../lib/api";
@@ -22,7 +22,9 @@ export default function CreateListingPage() {
         price: "",
         location: "",
         image_url: "",
+        image: null,
     });
+    const fileInputRef = useRef(null);
 
     useEffect(() => {
         setHasToken(!!getToken());
@@ -36,18 +38,19 @@ export default function CreateListingPage() {
         setSending(true);
         setError("");
         try {
-            const body = {
-                title: form.title.trim(),
-                description: form.description.trim() || undefined,
-                category: form.category || undefined,
-                condition: form.condition || undefined,
-                price: form.price ? Number(form.price) : undefined,
-                location: form.location.trim() || undefined,
-                image_url: form.image_url.trim() || undefined,
-            };
+            const formData = new FormData();
+            formData.append("title", form.title.trim());
+            if (form.description.trim()) formData.append("description", form.description.trim());
+            if (form.category) formData.append("category", form.category);
+            if (form.condition) formData.append("condition", form.condition);
+            if (form.price) formData.append("price", form.price);
+            if (form.location.trim()) formData.append("location", form.location.trim());
+            if (form.image_url.trim()) formData.append("image_url", form.image_url.trim());
+            if (form.image) formData.append("image", form.image);
+
             await apiFetch("/listings", {
                 method: "POST",
-                body: JSON.stringify(body),
+                body: formData,
             });
             router.push("/marketplace");
         } catch (e) {
@@ -79,10 +82,36 @@ export default function CreateListingPage() {
                 {/* Photos Section */}
                 <div className="card" style={{ padding: "1.5rem", marginBottom: "1.5rem" }}>
                     <h3 style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>📷 Photos</h3>
-                    <div className="upload-area">
-                        <div className="upload-icon">⬆️</div>
-                        <div className="upload-text">Click to upload photos</div>
-                        <div className="upload-hint">PNG, JPG up to 10MB each (Max 5 photos)</div>
+
+                    <input
+                        type="file"
+                        accept="image/png, image/jpeg, image/jpg"
+                        ref={fileInputRef}
+                        style={{ display: "none" }}
+                        onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) {
+                                update("image", e.target.files[0]);
+                                update("image_url", ""); // clear url if file selected
+                            }
+                        }}
+                    />
+
+                    <div
+                        className="upload-area"
+                        onClick={() => fileInputRef.current?.click()}
+                        style={{ cursor: "pointer", border: form.image ? "2px solid var(--cardinal-red)" : "2px dashed var(--border)", background: form.image ? "var(--bg-light)" : "transparent" }}
+                    >
+                        {form.image ? (
+                            <div style={{ padding: "2rem 0", color: "var(--cardinal-red)", fontWeight: 600 }}>
+                                ✅ {form.image.name} selected
+                            </div>
+                        ) : (
+                            <>
+                                <div className="upload-icon">⬆️</div>
+                                <div className="upload-text">Click to upload photo</div>
+                                <div className="upload-hint">PNG, JPG up to 10MB</div>
+                            </>
+                        )}
                     </div>
                     <div className="form-group" style={{ marginTop: "1rem" }}>
                         <label className="label">Or paste image URL</label>

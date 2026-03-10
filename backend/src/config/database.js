@@ -51,6 +51,7 @@ async function ensureSchema() {
       condition TEXT,
       image_url TEXT,
       location TEXT,
+      deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
@@ -66,6 +67,7 @@ async function ensureSchema() {
   await addCol('condition', 'TEXT');
   await addCol('image_url', 'TEXT');
   await addCol('location', 'TEXT');
+  await addCol('deleted_at', 'TIMESTAMPTZ');
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS identity_backups (

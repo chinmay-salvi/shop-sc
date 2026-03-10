@@ -12,11 +12,11 @@ export async function apiFetch(path, options = {}) {
   const method = (options.method || "GET").toUpperCase();
   const url = `${API_BASE}${path}`;
   logBasic("api.fetch", { method, path });
-  const headers = {
-    "Content-Type": "application/json",
-    ...getAuthHeaders(),
-    ...(options.headers || {})
-  };
+  const headers = { ...getAuthHeaders(), ...(options.headers || {}) };
+  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
   const start = typeof performance !== "undefined" ? performance.now() : 0;
   const response = await fetch(url, {
     ...options,
