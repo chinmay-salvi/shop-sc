@@ -1,6 +1,8 @@
 import GoogleProvider from "../components/GoogleProvider";
 import Navbar from "../components/Navbar";
 import "./globals.css";
+import AIChatbot from "../components/AIChatbot";
+
 
 export const metadata = {
   title: "ShopSC — Trojan Marketplace",
@@ -17,6 +19,7 @@ export default function RootLayout({ children }) {
           <div className="page-content">
             {children}
           </div>
+	<AIChatbot />
         </GoogleProvider>
       </body>
     </html>
