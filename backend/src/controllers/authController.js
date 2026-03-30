@@ -7,6 +7,9 @@ const { saveBackup, getBackup } = require("../models/identityBackup");
 const { JWT_EXPIRY } = require("../../../shared/constants");
 const { logBasic, logVerbose } = require("../config/logger");
 
+/** Override with JWT_EXPIRY in backend `.env` (e.g. `7d`) so dev sessions survive restarts. */
+const JWT_SESSION_EXPIRES = process.env.JWT_EXPIRY || JWT_EXPIRY;
+
 const KEY_HASH_REGEX = /^[a-f0-9]{64}$/i;
 
 function isUSCEmail(email = "") {
@@ -76,11 +79,11 @@ async function verifyProof(req, res) {
       const token = jwt.sign(
         { sub, nullifierHash: sub },
         process.env.JWT_SECRET || "dev-secret",
-        { expiresIn: JWT_EXPIRY }
+        { expiresIn: JWT_SESSION_EXPIRES }
       );
       logBasic("auth.verifyProof success (JWT circuit)", { subPrefix: String(sub).slice(0, 12) + "…" });
-      logVerbose("auth.verifyProof.jwt_circuit_path.session_issued", { tokenLen: token?.length, expiresIn: JWT_EXPIRY });
-      return res.json({ token, expiresIn: JWT_EXPIRY });
+      logVerbose("auth.verifyProof.jwt_circuit_path.session_issued", { tokenLen: token?.length, expiresIn: JWT_SESSION_EXPIRES });
+      return res.json({ token, expiresIn: JWT_SESSION_EXPIRES });
     }
 
     logVerbose("auth.verifyProof.semaphore_path.entry");
@@ -94,11 +97,11 @@ async function verifyProof(req, res) {
     const token = jwt.sign(
       { sub: stableId, nullifierHash: verification.nullifierHash },
       process.env.JWT_SECRET || "dev-secret",
-      { expiresIn: JWT_EXPIRY }
+      { expiresIn: JWT_SESSION_EXPIRES }
     );
     logBasic("auth.verifyProof success", { subPrefix: stableId ? String(stableId).slice(0, 8) + "…" : "" });
     logVerbose("auth.verifyProof.semaphore_path.session_issued");
-    return res.json({ token, expiresIn: JWT_EXPIRY });
+    return res.json({ token, expiresIn: JWT_SESSION_EXPIRES });
   } catch (error) {
     const message = error.message || "UNKNOWN_ERROR";
     logBasic("auth.verifyProof error", { message });

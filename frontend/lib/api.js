@@ -1,6 +1,10 @@
 import { logBasic, logVerbose } from "./logger";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:4000/api";
+/** Default same-origin `/api` so Next rewrites proxy to the backend (see next.config.js). Override with NEXT_PUBLIC_API_BASE if needed. */
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE !== undefined && process.env.NEXT_PUBLIC_API_BASE !== ""
+    ? process.env.NEXT_PUBLIC_API_BASE
+    : "/api";
 
 export function getAuthHeaders() {
   if (typeof window === "undefined") return {};

@@ -86,6 +86,34 @@ async function ensureSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id BIGSERIAL PRIMARY KEY,
+      listing_id BIGINT NOT NULL,
+      buyer_id TEXT NOT NULL,
+      seller_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_rewards (
+      stable_id TEXT PRIMARY KEY,
+      successful_buys INT NOT NULL DEFAULT 0,
+      successful_sales INT NOT NULL DEFAULT 0,
+      token_balance INT NOT NULL DEFAULT 0,
+      tier TEXT NOT NULL DEFAULT 'Bronze',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  try {
+    await pool.query(`ALTER TABLE user_rewards RENAME COLUMN user_id TO stable_id`);
+  } catch (_) {
+    /* already stable_id */
+  }
 }
 
 module.exports = {

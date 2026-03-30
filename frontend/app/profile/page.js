@@ -6,6 +6,8 @@ import { apiFetch } from "../../lib/api";
 import { getToken, clearToken } from "../../lib/auth";
 import { isEnrolled, backupIdentityWithPassword, getStablePseudonym } from "../../lib/zkp";
 import ListingCard from "../../components/ListingCard";
+import ProfileRewardsPanel from "../../components/ProfileRewardsPanel";
+import ProfileCompletedSalesValue from "../../components/ProfileCompletedSalesValue";
 
 export default function ProfilePage() {
     const [listings, setListings] = useState([]);
@@ -16,10 +18,17 @@ export default function ProfilePage() {
     const [editEntry, setEditEntry] = useState(null);
     const [editForm, setEditForm] = useState({ title: "", description: "", price: "", category: "", condition: "", location: "", image_url: "" });
     const [listingToDelete, setListingToDelete] = useState(null);
-    const hasToken = typeof window !== "undefined" && !!getToken();
+    const [clientReady, setClientReady] = useState(false);
+    const [hasToken, setHasToken] = useState(false);
+
+    useEffect(() => {
+        setHasToken(!!getToken());
+        setClientReady(true);
+    }, []);
 
     const loadListings = useCallback(() => {
         if (!hasToken) { setLoading(false); return; }
+        setLoading(true);
         apiFetch("/listings/mine")
             .then((data) => setListings(Array.isArray(data) ? data : []))
             .catch(() => setListings([]))
@@ -99,6 +108,14 @@ export default function ProfilePage() {
         window.location.href = "/";
     };
 
+    if (!clientReady) {
+        return (
+            <div className="container" style={{ paddingTop: "3rem", textAlign: "center" }}>
+                <p className="text-muted">Loading...</p>
+            </div>
+        );
+    }
+
     if (!hasToken) {
         return (
             <div className="container" style={{ paddingTop: "3rem", textAlign: "center" }}>
@@ -137,7 +154,6 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* Stats */}
             <div className="container profile-stats">
                 <div className="grid-3">
                     <div className="card stat-card">
@@ -152,15 +168,17 @@ export default function ProfilePage() {
                     </div>
                     <div className="card stat-card">
                         <div className="stat-card-icon" style={{ background: "#EDE9FE" }}>🎯</div>
-                        <div className="stat-card-value">—</div>
+                        <div className="stat-card-value"><ProfileCompletedSalesValue /></div>
                         <div className="stat-card-label">Completed Sales</div>
                     </div>
                 </div>
             </div>
 
+            <ProfileRewardsPanel />
+
             <div className="container" style={{ paddingTop: "2rem", paddingBottom: "3rem" }}>
                 {/* Identity Backup */}
-                {isEnrolled() && (
+                {clientReady && isEnrolled() && (
                     <div className="card" style={{ padding: "1.25rem", marginBottom: "1.5rem" }}>
                         <h4 style={{ marginBottom: "0.75rem" }}>🔑 Identity Backup</h4>
                         <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "0.75rem" }}>

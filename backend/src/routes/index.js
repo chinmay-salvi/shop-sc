@@ -2,6 +2,7 @@ const express = require("express");
 const authRoutes = require("./auth");
 const listingsRoutes = require("./listings");
 const chatRoutes = require("./chat");
+const rewardsRoutes = require("./rewards");
 const { getGroupRoot, getGroup } = require("../controllers/groupController");
 
 const router = express.Router();
@@ -12,5 +13,6 @@ router.get("/group", getGroup);
 router.use("/auth", authRoutes);
 router.use("/listings", listingsRoutes);
 router.use("/chats", chatRoutes);
+router.use("/rewards", rewardsRoutes);
 
 module.exports = router;
