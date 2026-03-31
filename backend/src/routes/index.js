@@ -3,6 +3,8 @@ const authRoutes = require("./auth");
 const listingsRoutes = require("./listings");
 const chatRoutes = require("./chat");
 const { getGroupRoot, getGroup } = require("../controllers/groupController");
+const aiChatRoutes = require("./aiChat");
+
 
 const router = express.Router();
 
@@ -12,5 +14,7 @@ router.get("/group", getGroup);
 router.use("/auth", authRoutes);
 router.use("/listings", listingsRoutes);
 router.use("/chats", chatRoutes);
+router.use("/ai-chat", aiChatRoutes);
+
 
 module.exports = router;
