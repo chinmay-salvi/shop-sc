@@ -1,0 +1,63 @@
+Open - http://localhost:3000/
+
+1. Login with usc email 
+2. Home page (Test following after creating listings both with & without login):
+    Browse Marketplace takes you to http://localhost:3000/marketplace
+    
+    List an item button 
+        LOGGED IN: takes you to create listings page http://localhost:3000/marketplace/create 
+        WITHOUT LOGIN: pops up a sign-in window 
+    
+    Browse Categories works
+        View all takes you to http://localhost:3000/marketplace
+        Takes you the Marketplace - filtered by specific category you select
+
+    Recent Listings
+        View all takes you to http://localhost:3000/marketplace
+        Clicking on specifc listing takes you to its page
+
+3. Marketplace
+    Filters and Sorting of listed items works
+    Test the mini search bar that appears if the listing exists (w & w/o filtering by categories)
+    Selecting specfic category works
+            If listing exits - it should be clickable
+            If not - shows 'create the first listing button'
+                LOGGED IN: takes you to create a listing
+                WITHOUT LOGIN: Prompts you to Sign in - The button takes you to homepage
+                    (todo - implement - the button should pop up the sign-in window)
+
+    
+    
+4. After opening a specific listing
+    Shows More from this Seller
+    Make an Offer - todo: remove this button
+    LOGGED IN: Contact seller must take user to conversations page and open chat with specific seller
+    WITHOUT LOGIN: Contact seller (todo - implement - the button should pop up the sign-in window)
+    Only after login - Shows option to view seller profile on right
+
+5. Navbar
+    search bar is not functional - todo: implement
+    Browse button works
+    +Sell button works and should let you create a new listing
+    Clicking on profile icon:
+        WITHOUT LOGIN : Sign-In window pops up
+        LOGGED IN:  takes you to profile page where following is shown
+            my listings 
+            total listings
+            active listings
+            completed sales
+            you can edit/delete the listing here (image modification is not allowed right now)
+        
+
+6. Logout works
+
+NOTE: There is still some legacy functionalities in the code for backup, which is to be removed after the entire implementation is completed. Be sure to provide your Chatbot this context and ignore the legacy code.
+
+Env variables: DO NOT UPLOAD THE GOOGLE_CLIENT_ID TO ANY CHATBOT!!!!!!!!
+
+DB_URL=postgresql://postgres:postgres@localhost:5432/shop_sc
+JWT_SECRET=dev-secret
+MOCK_EMAIL_URL=http://localhost:8025/send
+GOOGLE_CLIENT_ID=237558140618-230i8mn57hfglaup794fn0er4vu58e8v.apps.googleusercontent.com
+LOG_MODE=verbose
+
