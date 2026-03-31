@@ -7,7 +7,7 @@ const { pool, ensureSchema } = require("../src/config/database");
 const { refreshRewards } = require("../src/services/rewardsService");
 
 const USERS = [
-  { stableId: process.env.SUB || 'fallback_test_id', buys: 5, sales: 5 },
+  { stableId: process.env.SUB || 'fallback_test_id', buys: 1, sales: 1 },
 ];
 
 const GHOST = "f".repeat(64);
