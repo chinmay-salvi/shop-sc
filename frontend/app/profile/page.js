@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
 import { getToken, clearToken } from "../../lib/auth";
-import { isEnrolled, backupIdentityWithPassword, getStablePseudonym } from "../../lib/zkp";
+import { isEnrolled, backupIdentityWithPassword } from "../../lib/zkp";
 import ListingCard from "../../components/ListingCard";
 import ProfileRewardsPanel from "../../components/ProfileRewardsPanel";
 import ProfileCompletedSalesValue from "../../components/ProfileCompletedSalesValue";
@@ -12,7 +12,6 @@ import ProfileCompletedSalesValue from "../../components/ProfileCompletedSalesVa
 export default function ProfilePage() {
     const [listings, setListings] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [myStableId, setMyStableId] = useState("");
     const [backupPassword, setBackupPassword] = useState("");
     const [backupStatus, setBackupStatus] = useState("");
     const [editEntry, setEditEntry] = useState(null);
@@ -37,7 +36,6 @@ export default function ProfilePage() {
 
     useEffect(() => {
         loadListings();
-        getStablePseudonym().then(setMyStableId).catch(() => { });
     }, [loadListings]);
 
     const handleDelete = (id) => {
@@ -139,11 +137,6 @@ export default function ProfilePage() {
                         <div className="profile-meta">
                             <div className="profile-meta-item">⭐ Verified</div>
                             <div className="profile-meta-item">📦 {activeCount} Listings</div>
-                            {myStableId && (
-                                <div className="profile-meta-item">
-                                    🔑 …{myStableId.slice(-12)}
-                                </div>
-                            )}
                         </div>
                     </div>
                     <div style={{ marginLeft: "auto", display: "flex", gap: "0.5rem" }}>
