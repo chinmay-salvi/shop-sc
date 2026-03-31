@@ -10,6 +10,7 @@
     "dev:backend": "npm --workspace backend run dev",
     "dev:frontend": "npm --workspace frontend run dev",
     "init-group": "node scripts/init-group.js",
+    "seed:transactions": "npm --workspace backend run seed:transactions",
     "test": "jest"
   },
   "devDependencies": {

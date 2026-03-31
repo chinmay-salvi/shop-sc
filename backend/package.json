@@ -6,7 +6,8 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "node src/server.js",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "seed:transactions": "node scripts/seedTransactions.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

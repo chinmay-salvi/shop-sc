@@ -8,6 +8,11 @@ const nextConfig = {
   async redirects() {
     return [{ source: "/favicon.ico", destination: "/icon.svg", permanent: false }];
   },
+  /** Proxy API to backend so the browser calls same-origin `/api/*` (avoids CORS / blocked cross-origin fetches). */
+  async rewrites() {
+    const backend = process.env.BACKEND_URL || "http://127.0.0.1:4000";
+    return [{ source: "/api/:path*", destination: `${backend}/api/:path*` }];
+  },
   async headers() {
     return [
       {
