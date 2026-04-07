@@ -1,11 +1,28 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { apiFetch } from "../../lib/api";
 import { getToken } from "../../lib/auth";
-import { getStablePseudonym } from "../../lib/zkp";
+
+function timeAgo(dateStr) {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+function formatTime(dateStr) {
+  if (!dateStr) return "";
+  return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
 function ChatsContent() {
   const searchParams = useSearchParams();
@@ -19,47 +36,106 @@ function ChatsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [newChatId, setNewChatId] = useState("");
+  const [sending, setSending] = useState(false);
+  const messagesEndRef = useRef(null);
+  const pollRef = useRef(null);
   const hasToken = typeof window !== "undefined" && !!getToken();
 
   useEffect(() => {
-    getStablePseudonym().then(setMyStableId).catch(() => setMyStableId(""));
+    try {
+      const token = getToken();
+      if (token) {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        setMyStableId(payload.sub || "");
+      }
+    } catch (_) {}
   }, []);
 
-  useEffect(() => {
-    if (!hasToken) { setLoading(false); return; }
+  const fetchPartners = useCallback(() => {
+    if (!hasToken) return;
     apiFetch("/chats/conversations")
       .then((data) => {
         const p = data.partners || [];
-        setPartners(p);
-        // If initialPartner not in list, add it
-        if (initialPartner && !p.includes(initialPartner)) {
-          setPartners([initialPartner, ...p]);
+        setPartners((prev) => {
+          // Merge: keep any partner that's in prev but not returned yet (e.g. newly started)
+          const ids = new Set(p.map((x) => x.partner_id || x));
+          const extra = prev.filter((x) => {
+            const id = x.partner_id || x;
+            return !ids.has(id);
+          });
+          return [...p, ...extra];
+        });
+        if (initialPartner) {
+          setPartners((prev) => {
+            const ids = new Set(prev.map((x) => x.partner_id || x));
+            if (!ids.has(initialPartner)) return [{ partner_id: initialPartner }, ...prev];
+            return prev;
+          });
         }
       })
-      .catch(() => setPartners([]))
-      .finally(() => setLoading(false));
+      .catch(() => {});
   }, [hasToken, initialPartner]);
 
   useEffect(() => {
-    if (!hasToken || !selectedPartner) { setMessages([]); return; }
+    if (!hasToken) { setLoading(false); return; }
+    fetchPartners();
+    setLoading(false);
+  }, [hasToken, fetchPartners]);
+
+  const fetchMessages = useCallback(() => {
+    if (!hasToken || !selectedPartner) return;
     apiFetch(`/chats/messages?with=${encodeURIComponent(selectedPartner)}`)
-      .then((data) => setMessages(data.messages || []))
-      .catch(() => setMessages([]));
+      .then((data) => {
+        setMessages((prev) => {
+          const next = data.messages || [];
+          // Only update if something changed (avoid re-render flicker)
+          if (JSON.stringify(prev.map((m) => m.id)) === JSON.stringify(next.map((m) => m.id))) return prev;
+          return next;
+        });
+      })
+      .catch(() => {});
   }, [hasToken, selectedPartner]);
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Poll for new messages every 3 seconds when a conversation is open
+  useEffect(() => {
+    clearInterval(pollRef.current);
+    if (!hasToken || !selectedPartner) { setMessages([]); return; }
+    fetchMessages();
+    pollRef.current = setInterval(() => {
+      fetchMessages();
+      fetchPartners();
+    }, 3000);
+    return () => clearInterval(pollRef.current);
+  }, [hasToken, selectedPartner, fetchMessages, fetchPartners]);
 
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!body.trim() || !selectedPartner) return;
+    if (!body.trim() || !selectedPartner || sending) return;
+    setSending(true);
     try {
       await apiFetch("/chats/messages", {
         method: "POST",
         body: JSON.stringify({ recipient_id: selectedPartner, body: body.trim() }),
       });
       setBody("");
-      const data = await apiFetch(`/chats/messages?with=${encodeURIComponent(selectedPartner)}`);
-      setMessages(data.messages || []);
-    } catch (e) {
-      setError(e.message);
+      fetchMessages();
+      fetchPartners();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage(e);
     }
   };
 
@@ -69,7 +145,11 @@ function ChatsContent() {
       return;
     }
     const id = newChatId.trim();
-    if (!partners.includes(id)) setPartners((p) => [id, ...p]);
+    setPartners((prev) => {
+      const ids = new Set(prev.map((x) => x.partner_id || x));
+      if (ids.has(id)) return prev;
+      return [{ partner_id: id }, ...prev];
+    });
     setSelectedPartner(id);
     setNewChatId("");
     setError("");
@@ -92,10 +172,15 @@ function ChatsContent() {
       <div style={{ marginBottom: "1rem" }}>
         <h1 style={{ marginBottom: "0.25rem" }}>Messages</h1>
         <p className="text-muted" style={{ fontSize: "0.85rem" }}>
-          Your ID (share to receive messages): <code style={{ background: "var(--light-bg)", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }}>…{myStableId.slice(-16)}</code>
+          Your ID (share to receive messages):{" "}
+          <code style={{ background: "var(--light-bg)", padding: "0.2rem 0.5rem", borderRadius: 4, fontSize: "0.8rem" }}>
+            …{myStableId.slice(-16)}
+          </code>
         </p>
       </div>
-      {error && <p style={{ color: "var(--cardinal-red)", marginBottom: "1rem", fontSize: "0.9rem" }}>{error}</p>}
+      {error && (
+        <p style={{ color: "var(--cardinal-red)", marginBottom: "1rem", fontSize: "0.9rem" }}>{error}</p>
+      )}
 
       <div className="chat-layout">
         {/* Sidebar */}
@@ -109,26 +194,49 @@ function ChatsContent() {
                 placeholder="Paste user ID to chat..."
                 value={newChatId}
                 onChange={(e) => setNewChatId(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && startNewChat()}
               />
-              <button className="btn btn-cardinal btn-sm" onClick={startNewChat} style={{ fontSize: "0.75rem", padding: "0.4rem 0.6rem" }}>+</button>
+              <button
+                className="btn btn-cardinal btn-sm"
+                onClick={startNewChat}
+                style={{ fontSize: "0.75rem", padding: "0.4rem 0.6rem" }}
+              >
+                +
+              </button>
             </div>
           </div>
+
           {partners.length === 0 ? (
             <p style={{ padding: "1rem", color: "var(--text-muted)", fontSize: "0.85rem" }}>No conversations yet</p>
           ) : (
-            partners.map((p) => (
-              <div
-                key={p}
-                className={`chat-partner ${selectedPartner === p ? "chat-partner-active" : ""}`}
-                onClick={() => setSelectedPartner(p)}
-              >
-                <div className="avatar avatar-sm">AT</div>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>…{p.slice(-8)}</div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>Anonymous Trojan</div>
+            partners.map((p) => {
+              const partnerId = p.partner_id || p;
+              const lastMsg = p.last_message;
+              const lastAt = p.last_message_at;
+              const isActive = selectedPartner === partnerId;
+              return (
+                <div
+                  key={partnerId}
+                  className={`chat-partner ${isActive ? "chat-partner-active" : ""}`}
+                  onClick={() => setSelectedPartner(partnerId)}
+                >
+                  <div className="avatar avatar-sm">AT</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontWeight: 600, fontSize: "0.85rem" }}>…{partnerId.slice(-8)}</div>
+                      {lastAt && (
+                        <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", flexShrink: 0, marginLeft: "0.5rem" }}>
+                          {timeAgo(lastAt)}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {lastMsg || "Anonymous Trojan"}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 
@@ -143,27 +251,44 @@ function ChatsContent() {
                   <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>…{selectedPartner.slice(-8)}</div>
                 </div>
               </div>
+
               <div className="chat-messages" style={{ minHeight: 300, maxHeight: "50vh" }}>
                 {messages.length === 0 && (
-                  <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem 0" }}>No messages yet. Say hello!</p>
+                  <p style={{ textAlign: "center", color: "var(--text-muted)", padding: "2rem 0" }}>
+                    No messages yet. Say hello!
+                  </p>
                 )}
-                {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`chat-bubble ${m.sender_id === myStableId ? "chat-bubble-sent" : "chat-bubble-received"}`}
-                  >
-                    {m.body}
-                  </div>
-                ))}
+                {messages.map((m) => {
+                  const isSent = m.sender_id === myStableId;
+                  return (
+                    <div
+                      key={m.id}
+                      style={{ display: "flex", flexDirection: "column", alignItems: isSent ? "flex-end" : "flex-start" }}
+                    >
+                      <div className={`chat-bubble ${isSent ? "chat-bubble-sent" : "chat-bubble-received"}`}>
+                        {m.body}
+                      </div>
+                      <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "0.2rem", marginBottom: "0.25rem" }}>
+                        {formatTime(m.created_at)}
+                      </div>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
               </div>
+
               <form className="chat-input-area" onSubmit={sendMessage}>
                 <input
                   className="input"
-                  placeholder="Type a message..."
+                  placeholder="Type a message… (Enter to send)"
                   value={body}
                   onChange={(e) => setBody(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  disabled={sending}
                 />
-                <button type="submit" className="btn btn-cardinal">Send</button>
+                <button type="submit" className="btn btn-cardinal" disabled={sending || !body.trim()}>
+                  {sending ? "…" : "Send"}
+                </button>
               </form>
             </>
           ) : (
