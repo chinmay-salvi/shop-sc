@@ -40,6 +40,12 @@ export default function Navbar() {
                     >
                         Browse
                     </Link>
+                    <Link
+                        href="/chats"
+                        className={`btn btn-ghost ${pathname === "/chats" ? "btn-ghost-active" : ""}`}
+                    >
+                        💬 Chats
+                    </Link>
                     <Link href="/marketplace/create" className="btn btn-cardinal btn-sm">
                         ＋ Sell
                     </Link>

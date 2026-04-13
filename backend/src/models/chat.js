@@ -23,13 +23,17 @@ async function getConversation(userId, otherId) {
 
 async function getConversationPartners(userId) {
   const result = await pool.query(
-    `SELECT DISTINCT CASE WHEN sender_id = $1 THEN recipient_id ELSE sender_id END AS partner_id
+    `SELECT DISTINCT ON (partner_id)
+       CASE WHEN sender_id = $1 THEN recipient_id ELSE sender_id END AS partner_id,
+       body AS last_message,
+       created_at AS last_message_at
      FROM messages
      WHERE sender_id = $1 OR recipient_id = $1
-     ORDER BY partner_id`,
+     ORDER BY partner_id, created_at DESC`,
     [userId]
   );
-  return result.rows.map((r) => r.partner_id);
+  // Sort all conversations by most recent message
+  return result.rows.sort((a, b) => new Date(b.last_message_at) - new Date(a.last_message_at));
 }
 
 module.exports = {
